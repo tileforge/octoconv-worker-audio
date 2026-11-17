@@ -1,0 +1,51 @@
+{
+  "capabilities": [
+    {
+      "id": "octoconv.convert.audio",
+      "version": 1,
+      "legacy": {"operation": "convert", "engine": "audio"},
+      "client_operation": "convert",
+      "inputs": [{"role": "source", "min": 1, "max": 1}],
+      "outputs": [{"role": "primary", "min": 1, "max": 1}],
+      "parameter_schema": {},
+      "formats": [
+        {"from": "mp3", "to": "txt"},
+        {"from": "mp3", "to": "srt"},
+        {"from": "mp3", "to": "vtt"},
+        {"from": "mp3", "to": "json"},
+        {"from": "wav", "to": "txt"},
+        {"from": "wav", "to": "srt"},
+        {"from": "wav", "to": "vtt"},
+        {"from": "wav", "to": "json"},
+        {"from": "m4a", "to": "txt"},
+        {"from": "m4a", "to": "srt"},
+        {"from": "m4a", "to": "vtt"},
+        {"from": "m4a", "to": "json"},
+        {"from": "ogg", "to": "txt"},
+        {"from": "ogg", "to": "srt"},
+        {"from": "ogg", "to": "vtt"},
+        {"from": "ogg", "to": "json"},
+        {"from": "mp4", "to": "txt"},
+        {"from": "mp4", "to": "srt"},
+        {"from": "mp4", "to": "vtt"},
+        {"from": "mp4", "to": "json"},
+        {"from": "mov", "to": "txt"},
+        {"from": "mov", "to": "srt"},
+        {"from": "mov", "to": "vtt"},
+        {"from": "mov", "to": "json"},
+        {"from": "avi", "to": "txt"},
+        {"from": "avi", "to": "srt"},
+        {"from": "avi", "to": "vtt"},
+        {"from": "avi", "to": "json"},
+        {"from": "mkv", "to": "txt"},
+        {"from": "mkv", "to": "srt"},
+        {"from": "mkv", "to": "vtt"},
+        {"from": "mkv", "to": "json"},
+        {"from": "webm", "to": "txt"},
+        {"from": "webm", "to": "srt"},
+        {"from": "webm", "to": "vtt"},
+        {"from": "webm", "to": "json"}
+      ]
+    }
+  ]
+}

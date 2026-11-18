@@ -55,6 +55,39 @@ func TestPairsMatchManifest(t *testing.T) {
 	}
 }
 
+func TestManifestClosesLanguageAndTranslate(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "schema", "manifest-audio-convert.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Capabilities []struct {
+			Schema struct {
+				Type                 string `json:"type"`
+				AdditionalProperties bool   `json:"additionalProperties"`
+				Properties           map[string]struct {
+					Type string   `json:"type"`
+					Enum []string `json:"enum"`
+				} `json:"properties"`
+			} `json:"parameter_schema"`
+		} `json:"capabilities"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	schema := doc.Capabilities[0].Schema
+	if schema.Type != "object" || schema.AdditionalProperties {
+		t.Fatalf("schema %+v", schema)
+	}
+	lang := schema.Properties["language"]
+	if lang.Type != "string" || strings.Join(lang.Enum, ",") != "auto,en,ru,es,fr,de" {
+		t.Fatalf("language %+v", lang)
+	}
+	if schema.Properties["translate"].Type != "boolean" || len(schema.Properties) != 2 {
+		t.Fatalf("properties %+v", schema.Properties)
+	}
+}
+
 func TestFfmpegNormalizeArgs(t *testing.T) {
 	got := ffmpegNormalizeArgs("/work/in.mp3", "/work/norm.wav")
 	want := []string{
@@ -69,7 +102,7 @@ func TestFfmpegNormalizeArgs(t *testing.T) {
 }
 
 func TestWhisperArgsUseAutoAndNoTranslate(t *testing.T) {
-	got := whisperArgs("/models/ggml-base.bin", "/work/norm.wav", "/work/out", []string{"-ojf"}, 2)
+	got := whisperArgs("/models/ggml-base.bin", "/work/norm.wav", "/work/out", []string{"-ojf"}, audioOpts{}, 2)
 	want := []string{"-m", "/models/ggml-base.bin", "-f", "/work/norm.wav", "-of", "/work/out", "-ojf", "-l", "auto", "-t", "2"}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("args = %v", got)
@@ -81,11 +114,25 @@ func TestWhisperArgsUseAutoAndNoTranslate(t *testing.T) {
 	}
 }
 
+func TestWhisperArgsLanguageAndTranslate(t *testing.T) {
+	got := whisperArgs("/models/ggml-base.bin", "/work/norm.wav", "/work/out", []string{"-otxt"}, audioOpts{language: "ru", translate: true}, 2)
+	want := []string{"-m", "/models/ggml-base.bin", "-f", "/work/norm.wav", "-of", "/work/out", "-otxt", "-l", "ru", "-tr", "-t", "2"}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("args = %v", got)
+	}
+	plain := whisperArgs("/models/ggml-base.bin", "/work/norm.wav", "/work/out", []string{"-otxt"}, audioOpts{language: "", translate: false}, 1)
+	if strings.Join(plain, "\n") != strings.Join([]string{"-m", "/models/ggml-base.bin", "-f", "/work/norm.wav", "-of", "/work/out", "-otxt", "-l", "auto", "-t", "1"}, "\n") {
+		t.Fatalf("plain args = %v", plain)
+	}
+}
+
 func TestConvertRejectsOptionsBeforeExec(t *testing.T) {
 	for _, opts := range []map[string]any{
-		{"language": "ru"},
-		{"translate": true},
-		{"language": "en", "translate": false},
+		{"pitch": true},
+		{"language": "zz"},
+		{"language": 1},
+		{"translate": "true"},
+		{"language": "en", "translate": 0},
 	} {
 		called := false
 		c := AudioConverter{run: func(context.Context, string, ...string) error {
@@ -96,6 +143,37 @@ func TestConvertRejectsOptionsBeforeExec(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "unsupported option") || called {
 			t.Fatalf("opts %v err %v called %v", opts, err, called)
 		}
+	}
+}
+
+func TestConvertPassesLanguageAndTranslate(t *testing.T) {
+	dir := t.TempDir()
+	outPath := filepath.Join(dir, "out.txt")
+	var whisper []string
+	c := AudioConverter{threads: 2, run: func(_ context.Context, name string, args ...string) error {
+		if name == "whisper-cli" {
+			whisper = append([]string(nil), args...)
+			return os.WriteFile(outPath, []byte("caption"), 0o600)
+		}
+		return nil
+	}}
+	opts := map[string]any{"language": "ru", "translate": true}
+	if err := c.Convert(context.Background(), filepath.Join(dir, "in.mp3"), outPath, opts); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"-m", "/models/ggml-base.bin", "-f", filepath.Join(dir, "norm.wav"), "-of", filepath.Join(dir, "out"), "-otxt", "-l", "ru", "-tr", "-t", "2"}
+	if strings.Join(whisper, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("whisper %v", whisper)
+	}
+
+	whisper = nil
+	outPath = filepath.Join(dir, "plain.txt")
+	if err := c.Convert(context.Background(), filepath.Join(dir, "in.mp3"), outPath, map[string]any{"language": "", "translate": false}); err != nil {
+		t.Fatal(err)
+	}
+	joined := " " + strings.Join(whisper, " ") + " "
+	if !strings.Contains(joined, " -l auto ") || strings.Contains(joined, " -tr ") {
+		t.Fatalf("plain whisper %v", whisper)
 	}
 }
 

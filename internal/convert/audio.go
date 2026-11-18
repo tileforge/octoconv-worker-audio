@@ -65,12 +65,12 @@ func (AudioConverter) Pairs() []Pair {
 	return pairs
 }
 
-// Convert transcribes inPath into outPath. opts must be empty. language and
-// translate are not on a protocol assignment, and a non-empty map would
-// otherwise be ignored.
+// Convert transcribes inPath into outPath. language is a closed set and
+// translate is a boolean. An unknown key fails before either program runs.
 func (c AudioConverter) Convert(ctx context.Context, inPath, outPath string, opts map[string]any) error {
-	if len(opts) != 0 {
-		return fmt.Errorf("audio: unsupported option")
+	parsed, err := audioOptsFromMap(opts)
+	if err != nil {
+		return err
 	}
 	target := NormalizeFormat(filepath.Ext(outPath))
 	outFlags := whisperOutputFlag(target)
@@ -86,7 +86,7 @@ func (c AudioConverter) Convert(ctx context.Context, inPath, outPath string, opt
 		return fmt.Errorf("audio: ffmpeg: %w", err)
 	}
 	outBase := strings.TrimSuffix(outPath, filepath.Ext(outPath))
-	args := whisperArgs(c.model(), normPath, outBase, outFlags, c.threadCount())
+	args := whisperArgs(c.model(), normPath, outBase, outFlags, parsed, c.threadCount())
 	if err := c.exec(ctx, "whisper-cli", args...); err != nil {
 		return fmt.Errorf("audio: whisper-cli: %w", err)
 	}
@@ -153,12 +153,57 @@ func ffmpegNormalizeArgs(inPath, normPath string) []string {
 	}
 }
 
+type audioOpts struct {
+	language  string
+	translate bool
+}
+
+var audioLanguages = map[string]bool{
+	"auto": true,
+	"en":   true,
+	"ru":   true,
+	"es":   true,
+	"fr":   true,
+	"de":   true,
+}
+
+func audioOptsFromMap(m map[string]any) (audioOpts, error) {
+	var o audioOpts
+	for k, v := range m {
+		switch k {
+		case "language":
+			s, ok := v.(string)
+			if !ok || (s != "" && !audioLanguages[s]) {
+				return audioOpts{}, fmt.Errorf("audio: unsupported option")
+			}
+			o.language = s
+		case "translate":
+			b, ok := v.(bool)
+			if !ok {
+				return audioOpts{}, fmt.Errorf("audio: unsupported option")
+			}
+			o.translate = b
+		default:
+			return audioOpts{}, fmt.Errorf("audio: unsupported option")
+		}
+	}
+	return o, nil
+}
+
 // whisper-cli defaults to English and to the host CPU count. An empty
 // language request has to pass -l auto, and -t has to be explicit.
-func whisperArgs(model, normPath, outBase string, outFlags []string, threads int) []string {
+func whisperArgs(model, normPath, outBase string, outFlags []string, o audioOpts, threads int) []string {
 	args := []string{"-m", model, "-f", normPath, "-of", outBase}
 	args = append(args, outFlags...)
-	args = append(args, "-l", "auto", "-t", strconv.Itoa(threads))
+	lang := o.language
+	if lang == "" {
+		lang = "auto"
+	}
+	args = append(args, "-l", lang)
+	if o.translate {
+		args = append(args, "-tr")
+	}
+	args = append(args, "-t", strconv.Itoa(threads))
 	return args
 }
 

@@ -15,11 +15,12 @@ func init() {
 }
 
 // AudioConverter shells out to ffmpeg and then whisper-cli.
-// A zero value runs those binaries directly. It does not apply Landlock.
+// A zero value runs those binaries directly. WithSandbox applies Landlock.
 type AudioConverter struct {
 	modelPath string
 	threads   int
 	run       func(ctx context.Context, name string, args ...string) error
+	sandbox   *engineSandbox
 }
 
 const defaultAudioModelPath = "/models/ggml-base.bin"
@@ -82,22 +83,22 @@ func (c AudioConverter) Convert(ctx context.Context, inPath, outPath string, opt
 	}
 	workDir := filepath.Dir(outPath)
 	normPath := filepath.Join(workDir, "norm.wav")
-	if err := c.exec(ctx, "ffmpeg", ffmpegNormalizeArgs(inPath, normPath)...); err != nil {
+	if err := c.exec(ctx, workDir, "ffmpeg", ffmpegNormalizeArgs(inPath, normPath)...); err != nil {
 		return fmt.Errorf("audio: ffmpeg: %w", err)
 	}
 	outBase := strings.TrimSuffix(outPath, filepath.Ext(outPath))
 	args := whisperArgs(c.model(), normPath, outBase, outFlags, parsed, c.threadCount())
-	if err := c.exec(ctx, "whisper-cli", args...); err != nil {
+	if err := c.exec(ctx, workDir, "whisper-cli", args...); err != nil {
 		return fmt.Errorf("audio: whisper-cli: %w", err)
 	}
 	return validateAudioOutput(outPath)
 }
 
-func (c AudioConverter) exec(ctx context.Context, name string, args ...string) error {
+func (c AudioConverter) exec(ctx context.Context, workDir, name string, args ...string) error {
 	if c.run != nil {
 		return c.run(ctx, name, args...)
 	}
-	return runCommand(ctx, engineEnv(""), name, args...)
+	return c.engine(workDir).run(ctx, name, args...)
 }
 
 func (c AudioConverter) model() string {
